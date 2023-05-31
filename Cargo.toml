@@ -1,0 +1,11 @@
+[package]
+name = "onepub_program"
+version = "0.1.0"
+edition = "2018"
+authors = ["azuldev azuldevgames@gmail.com"]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+solana-program = "1.14.18"
