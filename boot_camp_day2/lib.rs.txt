@@ -1,0 +1,83 @@
+use borsh::{BorshDeserialize, BorshSerialize};
+use solana_program::{
+    account_info::{next_account_info, AccountInfo},
+    entrypoint,
+    entrypoint::ProgramResult,
+    program_error::ProgramError,
+    pubkey::Pubkey,
+    rent::Rent,
+    system_instruction,
+    sysvar::Sysvar,
+    msg,
+};
+
+use std::convert::TryInto;
+
+entrypoint!(process_instruction);
+
+#[derive(BorshSerialize, BorshDeserialize, Debug)]
+pub struct HelloState {
+    is_initialized: bool,
+}
+
+// Accounts required
+/// 1. [signer, writable] Funding account
+/// 2. [writable] PDA account
+/// 3. [] System Program
+pub fn process_instruction(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    instruction_data: &[u8],
+) -> ProgramResult {
+    const ACCOUNT_DATA_LEN: usize = 0;
+
+    let accounts_iter = &mut accounts.iter();
+    // Getting required accounts
+    let funding_account = next_account_info(accounts_iter)?;
+    let pda_account = next_account_info(accounts_iter)?;
+    let system_program = next_account_info(accounts_iter)?;
+
+    // Getting 32 bytes seed data from instruction data
+    let signers_seeds = &instruction_data[..32];
+
+    // Checking if passed PDA and expected PDA are equal
+    let pda = Pubkey::create_program_address(&[signers_seeds], program_id)?;
+
+    if pda != *pda_account.key {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    // Log a message for each account
+    msg!("Processing instruction for accounts:");
+    msg!("Funding Account: {:?}", funding_account.key);
+    msg!("PDA Account: {:?}", pda_account.key);
+    msg!("System Program Account: {:?}", system_program.key);
+
+    // Check if the PDA account already exists
+    if pda_account.lamports() > 0 {
+        msg!("PDA account already exists");
+        return Ok(());
+    }
+
+    // Assessing required lamports and creating transaction instruction
+    let lamports_required = Rent::get()?.minimum_balance(ACCOUNT_DATA_LEN);
+    let create_pda_account_ix = system_instruction::create_account(
+        &funding_account.key,
+        &pda_account.key,
+        lamports_required,
+        ACCOUNT_DATA_LEN.try_into().unwrap(),
+        &program_id,
+    );
+    // Invoking the instruction but with PDAs as additional signer
+    solana_program::program::invoke_signed(
+        &create_pda_account_ix,
+        &[
+            funding_account.clone(),
+            pda_account.clone(),
+            system_program.clone(),
+        ],
+        &[&[&signers_seeds]],
+    )?;
+
+    Ok(())
+}
